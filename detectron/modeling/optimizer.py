@@ -93,6 +93,12 @@ def add_single_gpu_param_update_ops(model, gpu_id):
     lr = model.param_init_net.ConstantFill(
         [], 'lr', shape=[1], value=0.0
     )
+    lr_new_param = model.param_init_net.ConstantFill(
+        [], 'lr_new_param', shape=[1], value=0.0
+    )
+    lr_new_fc = model.param_init_net.ConstantFill(
+        [], 'lr_new_fc', shape=[1], value=0.0
+    )
     one = model.param_init_net.ConstantFill(
         [], 'one', shape=[1], value=1.0
     )
@@ -122,6 +128,27 @@ def add_single_gpu_param_update_ops(model, gpu_id):
         elif cfg.SOLVER.WEIGHT_DECAY > 0:
             # Apply weight decay to non-bias weights
             model.WeightedSum([param_grad, one, param, wd], param_grad)
+
+        # TODO(YH):
+        if ('bpm' in str(param) or 'apm' in str(param) or 'crm' in str(param) or 'ekc' in str(param) or 'pps' in str(param) or 'youtu' in str(param)) and 'fc' in str(param): 
+            print('use lr_new_fc for new param: ', param)
+            # Update param_grad and param_momentum in place
+            model.net.MomentumSGDUpdate(
+                [param_grad, param_momentum, lr_new_fc, param],
+                [param_grad, param_momentum, param],
+                momentum=cfg.SOLVER.MOMENTUM
+            )
+            continue
+        elif 'fpn' in str(param) or 'bpm' in str(param) or 'apm' in str(param) or 'crm' in str(param) or 'ekc' in str(param) or 'pps' in str(param) or 'youtu' in str(param):
+            print('use lr_new_param for new param: ', param)
+            # Update param_grad and param_momentum in place
+            model.net.MomentumSGDUpdate(
+                [param_grad, param_momentum, lr_new_param, param],
+                [param_grad, param_momentum, param],
+                momentum=cfg.SOLVER.MOMENTUM
+            )
+            continue
+
         # Update param_grad and param_momentum in place
         model.net.MomentumSGDUpdate(
             [param_grad, param_momentum, lr, param],

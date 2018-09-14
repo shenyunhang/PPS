@@ -48,6 +48,7 @@ import signal
 import threading
 import time
 import uuid
+import random
 from six.moves import queue as Queue
 
 from caffe2.python import core, workspace
@@ -90,9 +91,55 @@ class RoIDataLoader(object):
         self._num_gpus = cfg.NUM_GPUS
         self.coordinator = Coordinator()
 
+        if cfg.REID.TRIPLET_LOSS:
+            self._get_roidb_gt()
+            self._P = cfg.REID.P
+            self._K = cfg.REID.K
+            if cfg.REID.TRIPLET_LOSS_CROSS:
+                self._num_loaders = 1
+                self._cur_iter = 0
+                self._cur_gpu = 0
+
         self._output_names = get_minibatch_blob_names()
         self._shuffle_roidb_inds()
         self.create_threads()
+
+    def _get_roidb_gt(self):
+        self._class2idx = {}
+        for im_i, entry in enumerate(self._roidb):
+            if im_i % 1000 == 0:
+                logger.info(' {:d}/{:d}'.format(im_i, len(self._roidb)))
+
+            gt_inds = np.where(entry['gt_classes'] > 0)[0]
+            assert len(gt_inds) == 1, 'Only one ground truth for image is allowed.'
+            gt_classes = entry['gt_classes'][gt_inds].copy()
+
+            if gt_classes[0] - 1 not in self._class2idx.keys():
+                self._class2idx[gt_classes[0] - 1] = []
+            self._class2idx[gt_classes[0] - 1].append(im_i)
+
+        self._num_classes = len(self._class2idx.keys())
+        self._class = []
+
+    def set_start_iter(self, start_iter):
+        self._cur_iter = start_iter
+
+    def _update_cur_iter(self):
+        with self._lock:
+            self._cur_gpu = self._cur_gpu + 1
+            if self._cur_gpu < cfg.NUM_GPUS:
+                return
+            self._cur_iter = self._cur_iter + 1
+            self._cur_gpu = 0
+
+    def get_num_iter_per_epoch_triplet(self):
+        return int(self._num_classes / self._P / cfg.NUM_GPUS)
+
+    def get_num_iter_per_epoch(self):
+        if cfg.TRAIN.USE_FLIPPED:
+            return int(len(self._roidb) / cfg.TRAIN.IMS_PER_BATCH / cfg.NUM_GPUS / 2)
+        else:
+            return int(len(self._roidb) / cfg.TRAIN.IMS_PER_BATCH / cfg.NUM_GPUS)
 
     def minibatch_loader_thread(self):
         """Load mini-batches and put them onto the mini-batch queue."""
@@ -110,6 +157,8 @@ class RoIDataLoader(object):
                 coordinated_put(
                     self.coordinator, self._minibatch_queue, ordered_blobs
                 )
+                if cfg.REID.TRIPLET_LOSS and cfg.REID.TRIPLET_LOSS_CROSS:
+                    self._update_cur_iter()
         logger.info('Stopping mini-batch loading thread')
 
     def enqueue_blobs_thread(self, gpu_id, blob_names):
@@ -161,6 +210,17 @@ class RoIDataLoader(object):
         self._cur = 0
 
     def _get_next_minibatch_inds(self):
+        if cfg.REID.TRIPLET_LOSS and cfg.REID.TRIPLET_LOSS_CROSS:
+            cur_ep = int(self._cur_iter / self.get_num_iter_per_epoch())
+            if cur_ep > cfg.REID.TRIPLET_LOSS_START and cur_ep % 2 == 1:
+                if self._cur_iter % self.get_num_iter_per_epoch() > self.get_num_iter_per_epoch_triplet():
+                    while self._cur_iter % self.get_num_iter_per_epoch() > self.get_num_iter_per_epoch_triplet():
+                        self._update_cur_iter()
+                else:
+                    return self._get_next_minibatch_inds_triplet_loss()
+        elif cfg.REID.TRIPLET_LOSS:
+            return self._get_next_minibatch_inds_triplet_loss()
+
         """Return the roidb indices for the next minibatch. Thread safe."""
         with self._lock:
             # We use a deque and always take the *first* IMS_PER_BATCH items
@@ -172,6 +232,22 @@ class RoIDataLoader(object):
             self._cur += cfg.TRAIN.IMS_PER_BATCH
             if self._cur >= len(self._perm):
                 self._shuffle_roidb_inds()
+        return db_inds
+
+    def _get_next_minibatch_inds_triplet_loss(self):
+        with self._lock:
+            if len(self._class) < self._P:
+                self._class = self._class2idx.keys()
+                random.shuffle(self._class)
+
+            db_inds = []
+            for p in range(self._P):
+                key = self._class.pop()
+                population = self._class2idx[key]
+                if len(population) < self._K:
+                    population = population * self._K
+                im_idx = random.sample(population, self._K)
+                db_inds.extend(im_idx)
         return db_inds
 
     def get_output_names(self):

@@ -72,6 +72,8 @@ def initialize_gpu_from_weights_file(model, weights_file, gpu_id=0):
     unscoped_param_names = OrderedDict()  # Print these out in model order
     for blob in model.params:
         unscoped_param_names[c2_utils.UnscopeName(str(blob))] = True
+    for blob in model.GetComputedParams():
+        unscoped_param_names[c2_utils.UnscopeName(str(blob))] = True
     with c2_utils.NamedCudaScope(gpu_id):
         for unscoped_param_name in unscoped_param_names.keys():
             if (unscoped_param_name.find(']_') >= 0 and
@@ -144,6 +146,13 @@ def save_model_to_weights_file(weights_file, model):
     blobs = {}
     # Save all parameters
     for param in model.params:
+        scoped_name = str(param)
+        unscoped_name = c2_utils.UnscopeName(scoped_name)
+        if unscoped_name not in blobs:
+            logger.debug(' {:s} -> {:s}'.format(scoped_name, unscoped_name))
+            blobs[unscoped_name] = workspace.FetchBlob(scoped_name)
+    # Save all parameters
+    for param in model.GetComputedParams():
         scoped_name = str(param)
         unscoped_name = c2_utils.UnscopeName(scoped_name)
         if unscoped_name not in blobs:

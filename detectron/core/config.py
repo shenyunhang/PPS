@@ -491,6 +491,10 @@ __C.MODEL.RPN_ONLY = False
 __C.MODEL.EXECUTION_TYPE = 'dag'
 
 
+__C.MODEL.USE_BN = False
+__C.MODEL.USE_GN = False
+
+
 # ---------------------------------------------------------------------------- #
 # RetinaNet options
 # ---------------------------------------------------------------------------- #
@@ -569,6 +573,10 @@ __C.SOLVER = AttrDict()
 
 # Base learning rate for the specified schedule
 __C.SOLVER.BASE_LR = 0.001
+
+__C.SOLVER.LR_SCALE_NEW_PARAM = 10.0
+
+__C.SOLVER.LR_SCALE_NEW_FC = 10.0
 
 # Schedule type (see functions in utils.lr_policy for options)
 # E.g., 'step', 'steps_with_decay', ...
@@ -904,6 +912,8 @@ __C.RESNETS.SHORTCUT_FUNC = 'basic_bn_shortcut'
 # Apply dilation in stage "res5"
 __C.RESNETS.RES5_DILATION = 1
 
+__C.RESNETS.RES5_STRIDE = 2
+
 
 # ---------------------------------------------------------------------------- #
 # GroupNorm options
@@ -1001,6 +1011,81 @@ __C.CLUSTER = AttrDict()
 
 # Flag to indicate if the code is running in a cluster environment
 __C.CLUSTER.ON_CLUSTER = False
+
+
+__C.REID = AttrDict()
+
+__C.REID.SCALE = (128, 384)
+
+__C.REID.VIS = False
+
+__C.REID.RERANK = True
+
+__C.REID.ITER_SIZE = 1
+
+__C.REID.BPM_DIM = 256
+
+__C.REID.BPM_STRIP_NUM = 6
+
+__C.REID.CRM = False
+
+__C.REID.TRIPLET_LOSS = False
+
+__C.REID.TRIPLET_LOSS_CROSS = False
+
+__C.REID.TRIPLET_LOSS_START = 10
+
+__C.REID.DROPOUT_FEATURE = False
+
+__C.REID.NORMALIZE_FEATURE = False
+
+__C.REID.MAX_AVE_FEATURE = False
+
+__C.REID.P = 16
+
+__C.REID.K = 4
+
+__C.REID.FPN_SHARED = False
+
+__C.REID.FPN_NUM = 4
+
+__C.REID.APM = False
+
+__C.REID.PSE_ON = False
+
+__C.REID.PSE_VIEW = 4
+
+__C.REID.PSE_WEIGHT = 1.0
+
+__C.REID.CROP_PROB = 0.0
+
+__C.REID.CROP_RATIO = 1.0
+
+__C.REID.HORIZONTAL_CROP_PROB = 0.0
+
+__C.REID.HORIZONTAL_CROP_RATIO = 1.0
+
+__C.REID.HSV_JITTER_PROB = 0.0
+
+__C.REID.SATURATION_RANGE = 0.0
+
+__C.REID.HUE_RANGE = 0.0
+
+__C.REID.VALUE_RANGE = 0.0
+
+__C.REID.GAUSSIAN_BLUR_PROB = 0.0
+
+__C.REID.GAUSSIAN_BLUR_KERNEL = 7
+
+__C.REID.RANDOM_ERASING_PROB = 0.0
+
+__C.REID.SL = 0.02
+
+__C.REID.SH = 0.4
+
+__C.REID.R1 = 0.3
+
+__C.REID.SGD_PT = False
 
 
 # ---------------------------------------------------------------------------- #

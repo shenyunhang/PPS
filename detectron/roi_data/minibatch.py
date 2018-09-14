@@ -20,7 +20,6 @@
 # Licensed under The MIT License [see LICENSE for details]
 # Written by Ross Girshick
 # --------------------------------------------------------
-
 """Construct minibatches for Detectron networks."""
 
 from __future__ import absolute_import
@@ -30,9 +29,12 @@ from __future__ import unicode_literals
 
 import cv2
 import logging
+import uuid
 import numpy as np
 
 from detectron.core.config import cfg
+import detectron.roi_data.reid as reid_roi_data
+import detectron.roi_data.reid_apm as reid_apm_roi_data
 import detectron.roi_data.fast_rcnn as fast_rcnn_roi_data
 import detectron.roi_data.retinanet as retinanet_roi_data
 import detectron.roi_data.rpn as rpn_roi_data
@@ -46,18 +48,25 @@ def get_minibatch_blob_names(is_training=True):
     """
     # data blob: holds a batch of N images, each with 3 channels
     blob_names = ['data']
+
+    if cfg.REID.APM:
+        blob_names += reid_apm_roi_data.get_reid_blob_names(
+            is_training=is_training)
+    else:
+        blob_names += reid_roi_data.get_reid_blob_names(
+            is_training=is_training)
+    return blob_names
+
     if cfg.RPN.RPN_ON:
         # RPN-only or end-to-end Faster R-CNN
         blob_names += rpn_roi_data.get_rpn_blob_names(is_training=is_training)
     elif cfg.RETINANET.RETINANET_ON:
         blob_names += retinanet_roi_data.get_retinanet_blob_names(
-            is_training=is_training
-        )
+            is_training=is_training)
     else:
         # Fast R-CNN like models trained on precomputed proposals
         blob_names += fast_rcnn_roi_data.get_fast_rcnn_blob_names(
-            is_training=is_training
-        )
+            is_training=is_training)
     return blob_names
 
 
@@ -67,8 +76,20 @@ def get_minibatch(roidb):
     # single tensor, hence we initialize each blob to an empty list
     blobs = {k: [] for k in get_minibatch_blob_names()}
     # Get the input image blob, formatted for caffe2
-    im_blob, im_scales = _get_image_blob(roidb)
+    im_blob, im_scales, im_crops = _get_image_blob(roidb)
     blobs['data'] = im_blob
+
+    # row col row col to x1 y1 x2 y2
+    im_crops = np.array(im_crops, dtype=np.int32)
+    im_crops = im_crops[:, (1, 0, 3, 2)]
+
+    if cfg.REID.APM:
+        valid = reid_apm_roi_data.add_reid_blobs(blobs, im_scales, im_crops,
+                                                 roidb)
+    else:
+        valid = reid_roi_data.add_reid_blobs(blobs, im_scales, roidb)
+    return blobs, valid
+
     if cfg.RPN.RPN_ON:
         # RPN-only or end-to-end Faster/Mask R-CNN
         valid = rpn_roi_data.add_rpn_blobs(blobs, im_scales, roidb)
@@ -77,9 +98,8 @@ def get_minibatch(roidb):
         # im_width, im_height corresponds to the network input: padded image
         # (if needed) width and height. We pass it as input and slice the data
         # accordingly so that we don't need to use SampleAsOp
-        valid = retinanet_roi_data.add_retinanet_blobs(
-            blobs, im_scales, roidb, im_width, im_height
-        )
+        valid = retinanet_roi_data.add_retinanet_blobs(blobs, im_scales, roidb,
+                                                       im_width, im_height)
     else:
         # Fast R-CNN like models trained on precomputed proposals
         valid = fast_rcnn_roi_data.add_fast_rcnn_blobs(blobs, im_scales, roidb)
@@ -93,24 +113,36 @@ def _get_image_blob(roidb):
     num_images = len(roidb)
     # Sample random scales to use for each image in this batch
     scale_inds = np.random.randint(
-        0, high=len(cfg.TRAIN.SCALES), size=num_images
-    )
+        0, high=len(cfg.TRAIN.SCALES), size=num_images)
     processed_ims = []
     im_scales = []
+    im_crops = []
     for i in range(num_images):
         im = cv2.imread(roidb[i]['image'])
         assert im is not None, \
             'Failed to read image \'{}\''.format(roidb[i]['image'])
         if roidb[i]['flipped']:
             im = im[:, ::-1, :]
+
+        # data augmentation
+        # prefix = uuid.uuid1()
+        # reid_roi_data.save_image(im, '{}_b'.format(prefix))
+        im, im_crop = reid_roi_data.random_crop(im)
+        im, im_crop2 = reid_roi_data.horizontal_crop(im)
+        im_crop[2] = im_crop[2] - (im_crop[2]-im_crop[0] - im_crop2[2])
+        im = reid_roi_data.hsv_jitter(im)
+        im = reid_roi_data.gaussian_blur(im)
+        im = reid_roi_data.random_erasing(im)
+        # reid_roi_data.save_image(im, '{}_a'.format(prefix))
+
         target_size = cfg.TRAIN.SCALES[scale_inds[i]]
         im, im_scale = blob_utils.prep_im_for_blob(
-            im, cfg.PIXEL_MEANS, target_size, cfg.TRAIN.MAX_SIZE
-        )
+            im, cfg.PIXEL_MEANS, target_size, cfg.TRAIN.MAX_SIZE)
         im_scales.append(im_scale)
+        im_crops.append(im_crop)
         processed_ims.append(im)
 
     # Create a blob to hold the input images
     blob = blob_utils.im_list_to_blob(processed_ims)
 
-    return blob, im_scales
+    return blob, im_scales, im_crops

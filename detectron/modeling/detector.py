@@ -54,14 +54,15 @@ class DetectionModelHelper(cnn.CNNModelHelper):
         # Defensively set cudnn_exhaustive_search to False in case the default
         # changes in CNNModelHelper. The detection code uses variable size
         # inputs that might not play nicely with cudnn_exhaustive_search.
-        kwargs['cudnn_exhaustive_search'] = False
+        # kwargs['cudnn_exhaustive_search'] = False
+        kwargs['cudnn_exhaustive_search'] = True
         super(DetectionModelHelper, self).__init__(**kwargs)
         self.roi_data_loader = None
         self.losses = []
         self.metrics = []
         self.do_not_update_params = []  # Param on this list are not updated
         self.net.Proto().type = cfg.MODEL.EXECUTION_TYPE
-        self.net.Proto().num_workers = cfg.NUM_GPUS * 4
+        self.net.Proto().num_workers = cfg.NUM_GPUS * 8
         self.prev_use_cudnn = self.use_cudnn
         self.gn_params = []  # Param on this list are GroupNorm parameters
 
@@ -79,6 +80,9 @@ class DetectionModelHelper(cnn.CNNModelHelper):
             )]
 
     def AffineChannel(self, blob_in, blob_out, dim, inplace=False):
+        if cfg.MODEL.USE_BN:
+            return self.SpatialBN(blob_in, blob_out, dim, is_test=not self.train)
+
         """Affine transformation to replace BN in networks where BN cannot be
         used (e.g., because the minibatch size is too small).
 
@@ -261,7 +265,8 @@ class DetectionModelHelper(cnn.CNNModelHelper):
         blob_out = blob_in
         if self.train and dropout_rate > 0:
             blob_out = self.Dropout(
-                blob_in, blob_in, ratio=dropout_rate, is_test=False
+                blob_in, blob_in + '_drop', ratio=dropout_rate, is_test=False
+                # blob_in, blob_in, ratio=dropout_rate, is_test=False
             )
         return blob_out
 
@@ -517,6 +522,15 @@ class DetectionModelHelper(cnn.CNNModelHelper):
             with c2_utils.CudaScope(i):
                 workspace.FeedBlob(
                     'gpu_{}/lr'.format(i), np.array([new_lr], dtype=np.float32))
+
+                lr_scale_new_param = cfg.SOLVER.LR_SCALE_NEW_PARAM
+                workspace.FeedBlob(
+                    'gpu_{}/lr_new_param'.format(i), np.array([new_lr * lr_scale_new_param], dtype=np.float32))
+
+                lr_scale_new_fc = cfg.SOLVER.LR_SCALE_NEW_FC
+                workspace.FeedBlob(
+                    'gpu_{}/lr_new_fc'.format(i), np.array([new_lr * lr_scale_new_fc], dtype=np.float32))
+
         ratio = _get_lr_change_ratio(cur_lr, new_lr)
         if cfg.SOLVER.SCALE_MOMENTUM and cur_lr > 1e-7 and \
                 ratio > cfg.SOLVER.SCALE_MOMENTUM_THRESHOLD:

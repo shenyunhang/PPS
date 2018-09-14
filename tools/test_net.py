@@ -107,7 +107,7 @@ if __name__ == '__main__':
 
     while not os.path.exists(cfg.TEST.WEIGHTS) and args.wait:
         logger.info('Waiting for \'{}\' to exist...'.format(cfg.TEST.WEIGHTS))
-        time.sleep(10)
+        time.sleep(10*60)
 
     run_inference(
         cfg.TEST.WEIGHTS,

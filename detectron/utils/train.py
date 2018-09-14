@@ -46,6 +46,7 @@ from detectron.utils import lr_policy
 from detectron.utils.training_stats import TrainingStats
 import detectron.utils.env as envu
 import detectron.utils.net as nu
+import detectron.utils.reid as reid_utils
 
 
 def train_model():
@@ -55,27 +56,60 @@ def train_model():
         # The final model was found in the output directory, so nothing to do
         return checkpoints
 
-    setup_model_for_training(model, weights_file, output_dir)
+    setup_model_for_training(model, weights_file, output_dir, start_iter)
     training_stats = TrainingStats(model)
-    CHECKPOINT_PERIOD = int(cfg.TRAIN.SNAPSHOT_ITERS / cfg.NUM_GPUS)
 
-    for cur_iter in range(start_iter, cfg.SOLVER.MAX_ITER):
+    num_iter_per_epoch = model.roi_data_loader.get_num_iter_per_epoch()
+    if cfg.REID.TRIPLET_LOSS and cfg.REID.TRIPLET_LOSS_CROSS:
+        num_iter_per_epoch_triplet = model.roi_data_loader.get_num_iter_per_epoch_triplet()
+
+    # CHECKPOINT_PERIOD = int(cfg.TRAIN.SNAPSHOT_ITERS / cfg.NUM_GPUS)
+    CHECKPOINT_PERIOD = cfg.TRAIN.SNAPSHOT_ITERS
+
+    for cur_iter in range(start_iter * num_iter_per_epoch, cfg.SOLVER.MAX_ITER * num_iter_per_epoch):
+        cur_ep = int(cur_iter / num_iter_per_epoch)
+        if cfg.REID.TRIPLET_LOSS and cfg.REID.TRIPLET_LOSS_CROSS:
+            if cur_ep > cfg.REID.TRIPLET_LOSS_START and cur_ep % 2 == 1:
+                if cur_iter % num_iter_per_epoch > num_iter_per_epoch_triplet:
+                    continue
+                reid_utils.set_loss_scale(model, 1)
+            else:
+                reid_utils.set_loss_scale(model, 0)
+
         if model.roi_data_loader.has_stopped():
             handle_critical_error(model, 'roi_data_loader failed')
         training_stats.IterTic()
-        lr = model.UpdateWorkspaceLr(cur_iter, lr_policy.get_lr_at_iter(cur_iter))
+
+        # lr = model.UpdateWorkspaceLr(cur_iter, lr_policy.get_lr_at_iter(cur_iter))
+        lr = model.UpdateWorkspaceLr(cur_ep, lr_policy.get_lr_at_iter(cur_iter, cur_ep, num_iter_per_epoch))
+
         workspace.RunNet(model.net.Proto().name)
+
+        if cfg.REID.TRIPLET_LOSS and cfg.REID.TRIPLET_LOSS_CROSS:
+            if cur_ep > cfg.REID.TRIPLET_LOSS_START and cur_ep % 2 == 1:
+                # check input
+                for i in range(cfg.NUM_GPUS):
+                    data = workspace.FetchBlob('gpu_{}/{}'.format(i, 'labels_int32'))
+                    id_unique, id_counts = np.unique(data, return_counts=True)
+                    assert id_counts.shape[0] == cfg.REID.P, id_counts
+                    for id_count in id_counts:
+                        assert id_count == cfg.REID.K, id_count
+
         if cur_iter == start_iter:
             nu.print_net(model)
         training_stats.IterToc()
         training_stats.UpdateIterStats()
         training_stats.LogIterStats(cur_iter, lr)
 
-        if (cur_iter + 1) % CHECKPOINT_PERIOD == 0 and cur_iter > start_iter:
-            checkpoints[cur_iter] = os.path.join(
-                output_dir, 'model_iter{}.pkl'.format(cur_iter)
+        if cur_ep % CHECKPOINT_PERIOD == 0 and cur_iter == num_iter_per_epoch * (cur_ep + 1) - 1 and cur_iter > start_iter:
+            # checkpoints[cur_iter] = os.path.join(
+                # output_dir, 'model_iter{}.pkl'.format(cur_iter)
+            # )
+            # nu.save_model_to_weights_file(checkpoints[cur_iter], model)
+            checkpoints[cur_ep] = os.path.join(
+                output_dir, 'model_epoch{}.pkl'.format(cur_ep + 1)
             )
-            nu.save_model_to_weights_file(checkpoints[cur_iter], model)
+            nu.save_model_to_weights_file(checkpoints[cur_ep], model)
 
         if cur_iter == start_iter + training_stats.LOG_PERIOD:
             # Reset the iteration timer to remove outliers from the first few
@@ -114,7 +148,16 @@ def create_model():
         final_path = os.path.join(output_dir, 'model_final.pkl')
         if os.path.exists(final_path):
             logger.info('model_final.pkl exists; no need to train!')
-            return None, None, None, {'final': final_path}, output_dir
+            # return None, None, None, {'final': final_path}, output_dir
+
+            files = os.listdir(output_dir)
+            for f in files:
+                iter_string = re.findall(r'(?<=model_epoch)\d+(?=\.pkl)', f)
+                if len(iter_string) > 0:
+                    checkpoint_iter = int(iter_string[0])
+                    checkpoints[checkpoint_iter] = os.path.join(output_dir, f)
+            checkpoints['final'] = final_path
+            return None, None, None, checkpoints, output_dir
 
         if cfg.TRAIN.COPY_WEIGHTS:
             copyfile(
@@ -125,7 +168,7 @@ def create_model():
         # Find the most recent checkpoint (highest iteration number)
         files = os.listdir(output_dir)
         for f in files:
-            iter_string = re.findall(r'(?<=model_iter)\d+(?=\.pkl)', f)
+            iter_string = re.findall(r'(?<=model_epoch)\d+(?=\.pkl)', f)
             if len(iter_string) > 0:
                 checkpoint_iter = int(iter_string[0])
                 if checkpoint_iter > start_iter:
@@ -164,10 +207,11 @@ def optimize_memory(model):
         )
 
 
-def setup_model_for_training(model, weights_file, output_dir):
+def setup_model_for_training(model, weights_file, output_dir, start_iter):
     """Loaded saved weights and create the network in the C2 workspace."""
     logger = logging.getLogger(__name__)
     add_model_training_inputs(model)
+    model.roi_data_loader.set_start_iter(start_iter)
 
     if weights_file:
         # Override random weight initialization with weights from a saved model

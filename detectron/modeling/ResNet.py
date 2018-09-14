@@ -117,11 +117,11 @@ def add_ResNet_convX_body(model, block_counts):
         n4 = block_counts[3]
         s, dim_in = add_stage(
             model, 'res5', s, n4, dim_in, 2048, dim_bottleneck * 8,
-            cfg.RESNETS.RES5_DILATION
+            cfg.RESNETS.RES5_DILATION, stride_init=cfg.RESNETS.RES5_STRIDE
         )
         if freeze_at == 5:
             model.StopGradient(s, s)
-        return s, dim_in, 1. / 32. * cfg.RESNETS.RES5_DILATION
+        return s, dim_in, 1. / 16. * cfg.RESNETS.RES5_DILATION / cfg.RESNETS.RES5_STRIDE
     else:
         return s, dim_in, 1. / 16.
 

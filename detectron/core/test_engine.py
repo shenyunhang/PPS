@@ -44,8 +44,15 @@ import detectron.utils.env as envu
 import detectron.utils.net as net_utils
 import detectron.utils.subprocess as subprocess_utils
 import detectron.utils.vis as vis_utils
+import detectron.utils.net as nu
 
 logger = logging.getLogger(__name__)
+
+
+def normalize(nparray, order=2, axis=0):
+  """Normalize a N-D numpy array along the specified axis."""
+  norm = np.linalg.norm(nparray, ord=order, axis=axis, keepdims=True)
+  return nparray / (norm + np.finfo(np.float32).eps)
 
 
 def get_eval_functions():
@@ -150,17 +157,26 @@ def test_net_on_dataset(
     test_timer.tic()
     if multi_gpu:
         num_images = len(dataset.get_roidb())
-        all_boxes, all_segms, all_keyps = multi_gpu_test_net_on_dataset(
+        # all_boxes, all_segms, all_keyps = multi_gpu_test_net_on_dataset(
+            # weights_file, dataset_name, proposal_file, num_images, output_dir
+        # )
+        all_feats = multi_gpu_test_net_on_dataset(
             weights_file, dataset_name, proposal_file, num_images, output_dir
         )
     else:
-        all_boxes, all_segms, all_keyps = test_net(
+        # all_boxes, all_segms, all_keyps = test_net(
+            # weights_file, dataset_name, proposal_file, output_dir, gpu_id=gpu_id
+        # )
+        all_feats = test_net(
             weights_file, dataset_name, proposal_file, output_dir, gpu_id=gpu_id
         )
     test_timer.toc()
     logger.info('Total inference time: {:.3f}s'.format(test_timer.average_time))
-    results = task_evaluation.evaluate_all(
-        dataset, all_boxes, all_segms, all_keyps, output_dir
+    # results = task_evaluation.evaluate_all(
+        # dataset, all_boxes, all_segms, all_keyps, output_dir
+    # )
+    results = task_evaluation.evaluate_reid(
+        dataset, all_feats, output_dir
     )
     return results
 
@@ -183,9 +199,35 @@ def multi_gpu_test_net_on_dataset(
     # Run inference in parallel in subprocesses
     # Outputs will be a list of outputs from each subprocess, where the output
     # of each subprocess is the dictionary saved by test_net().
+    # outputs = subprocess_utils.process_in_parallel(
+        # 'detection', num_images, binary, output_dir, opts
+    # )
     outputs = subprocess_utils.process_in_parallel(
-        'detection', num_images, binary, output_dir, opts
+        'feature', num_images, binary, output_dir, opts
     )
+
+    all_feats = []
+    for feat_data in outputs:
+        all_feats.append(feat_data['all_feats'])
+    # all_feats = np.concatenate(all_feats, axis=0)
+    all_feats = np.vstack(all_feats)
+
+    feat_file = os.path.join(output_dir, 'features.pkl')
+    cfg_yaml = yaml.dump(cfg)
+    #save_object(
+    #    dict(
+    #        all_feats=all_feats,
+    #        cfg=cfg_yaml
+    #    ), feat_file
+    #)
+    logger.info('Wrote detections to: {}'.format(os.path.abspath(feat_file)))
+
+    feat_file = os.path.join(output_dir, 'features.npy')
+    np.save(feat_file, all_feats)
+    logger.info('Wrote detections to: {}'.format(os.path.abspath(feat_file)))
+
+    return all_feats
+
 
     # Collate the results from each subprocess
     all_boxes = [[] for _ in range(cfg.MODEL.NUM_CLASSES)]
@@ -234,7 +276,8 @@ def test_net(
     model = initialize_model_from_cfg(weights_file, gpu_id=gpu_id)
     num_images = len(roidb)
     num_classes = cfg.MODEL.NUM_CLASSES
-    all_boxes, all_segms, all_keyps = empty_results(num_classes, num_images)
+    # all_boxes, all_segms, all_keyps = empty_results(num_classes, num_images)
+    all_feats = empty_results(num_classes, num_images)
     timers = defaultdict(Timer)
     for i, entry in enumerate(roidb):
         if cfg.TEST.PRECOMPUTED_PROPOSALS:
@@ -244,24 +287,32 @@ def test_net(
             # that have the gt_classes field set to 0, which means there's no
             # ground truth.
             box_proposals = entry['boxes'][entry['gt_classes'] == 0]
+            obn_scores = entry['obn_scores'][entry['gt_classes'] == 0]
             if len(box_proposals) == 0:
                 continue
         else:
             # Faster R-CNN type models generate proposals on-the-fly with an
             # in-network RPN; 1-stage models don't require proposals.
             box_proposals = None
+            obn_scores = None
 
         im = cv2.imread(entry['image'])
         with c2_utils.NamedCudaScope(gpu_id):
-            cls_boxes_i, cls_segms_i, cls_keyps_i = im_detect_all(
-                model, im, box_proposals, timers
+            # cls_boxes_i, cls_segms_i, cls_keyps_i = im_detect_all(
+                # model, im, box_proposals, timers
+            # )
+            feat_i = im_detect_all(
+                model, im, box_proposals, obn_scores, timers
             )
+        if i == 0:
+            nu.print_net(model)
 
-        extend_results(i, all_boxes, cls_boxes_i)
-        if cls_segms_i is not None:
-            extend_results(i, all_segms, cls_segms_i)
-        if cls_keyps_i is not None:
-            extend_results(i, all_keyps, cls_keyps_i)
+        # extend_results(i, all_boxes, cls_boxes_i)
+        # if cls_segms_i is not None:
+            # extend_results(i, all_segms, cls_segms_i)
+        # if cls_keyps_i is not None:
+            # extend_results(i, all_keyps, cls_keyps_i)
+        extend_results(i, all_feats, feat_i)
 
         if i % 10 == 0:  # Reduce log file size
             ave_total_time = np.sum([t.average_time for t in timers.values()])
@@ -303,6 +354,22 @@ def test_net(
             )
 
     cfg_yaml = envu.yaml_dump(cfg)
+    if ind_range is not None:
+        feat_name = 'feature_range_%s_%s.pkl' % tuple(ind_range)
+    else:
+        feat_name = 'features.pkl'
+    feat_file = os.path.join(output_dir, feat_name)
+    save_object(
+        dict(
+            all_feats=all_feats,
+            cfg=cfg_yaml
+        ), feat_file
+    )
+    logger.info('Wrote features to: {}'.format(os.path.abspath(feat_file)))
+    # # return all_feats
+    return np.array(all_feats)
+
+    cfg_yaml = yaml.dump(cfg)
     if ind_range is not None:
         det_name = 'detection_range_%s_%s.pkl' % tuple(ind_range)
     else:
@@ -365,6 +432,9 @@ def get_roidb_and_dataset(dataset_name, proposal_file, ind_range):
 
 
 def empty_results(num_classes, num_images):
+    all_feats = [[] for _ in range(num_images)]
+    return all_feats
+
     """Return empty results lists for boxes, masks, and keypoints.
     Box detections are collected into:
       all_boxes[cls][image] = N x 5 array with columns (x1, y1, x2, y2, score)
@@ -387,6 +457,9 @@ def empty_results(num_classes, num_images):
 
 
 def extend_results(index, all_res, im_res):
+    all_res[index] = im_res
+    return
+
     """Add results for an image to the set of all results at the specified
     index.
     """

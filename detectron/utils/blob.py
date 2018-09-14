@@ -20,7 +20,6 @@
 # Licensed under The MIT License [see LICENSE for details]
 # Written by Ross Girshick
 # --------------------------------------------------------
-
 """Caffe2 blob helper functions."""
 
 from __future__ import absolute_import
@@ -48,9 +47,8 @@ def get_image_blob(im, target_scale, target_max_size):
         im_scale (float): image scale (target size) / (original size)
         im_info (ndarray)
     """
-    processed_im, im_scale = prep_im_for_blob(
-        im, cfg.PIXEL_MEANS, target_scale, target_max_size
-    )
+    processed_im, im_scale = prep_im_for_blob(im, cfg.PIXEL_MEANS,
+                                              target_scale, target_max_size)
     blob = im_list_to_blob(processed_im)
     # NOTE: this height and width may be larger than actual scaled input image
     # due to the FPN.COARSEST_STRIDE related padding in im_list_to_blob. We are
@@ -85,8 +83,7 @@ def im_list_to_blob(ims):
 
     num_images = len(ims)
     blob = np.zeros(
-        (num_images, max_shape[0], max_shape[1], 3), dtype=np.float32
-    )
+        (num_images, max_shape[0], max_shape[1], 3), dtype=np.float32)
     for i in range(num_images):
         im = ims[i]
         blob[i, 0:im.shape[0], 0:im.shape[1], :] = im
@@ -105,8 +102,20 @@ def prep_im_for_blob(im, pixel_means, target_size, max_size):
     Returns a list of transformed images, one for each target size. Also returns
     the scale factors that were used to compute each returned image.
     """
+    im_shape = im.shape
     im = im.astype(np.float32, copy=False)
     im -= pixel_means
+
+    # im -= 128.
+    # im /= 128.
+    # im = cv2.resize(im, (128, 384), interpolation=cv2.INTER_LINEAR)
+    # im = cv2.resize(im, cfg.REID.SCALE, interpolation=cv2.INTER_LINEAR)
+    im = cv2.resize(im, cfg.REID.SCALE, interpolation=cv2.INTER_CUBIC)
+    return im, np.array([
+        float(cfg.REID.SCALE[0]) / float(im_shape[1]),
+        float(cfg.REID.SCALE[1]) / float(im_shape[0])
+    ], np.float32)
+
     im_shape = im.shape
     im_size_min = np.min(im_shape[0:2])
     im_size_max = np.max(im_shape[0:2])
@@ -120,8 +129,7 @@ def prep_im_for_blob(im, pixel_means, target_size, max_size):
         None,
         fx=im_scale,
         fy=im_scale,
-        interpolation=cv2.INTER_LINEAR
-    )
+        interpolation=cv2.INTER_LINEAR)
     return im, im_scale
 
 

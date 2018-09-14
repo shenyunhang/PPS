@@ -201,7 +201,79 @@ _DATASETS = {
             _DATA_DIR + '/VOC2012/annotations/voc_2012_val.json',
         _DEVKIT_DIR:
             _DATA_DIR + '/VOC2012/VOCdevkit2012'
-    }
+    },
+    'market1501_trainval': {
+        _IM_DIR:
+            _DATA_DIR + '/market1501/images',
+        _ANN_FN:
+            _DATA_DIR + '/market1501/trainval.json',
+    },
+    'market1501_test': {
+        _IM_DIR:
+            _DATA_DIR + '/market1501/images',
+        _ANN_FN:
+            _DATA_DIR + '/market1501/test.json',
+    },
+    'duke_trainval': {
+        _IM_DIR:
+            _DATA_DIR + '/duke/images',
+        _ANN_FN:
+            _DATA_DIR + '/duke/trainval.json',
+    },
+    'duke_test': {
+        _IM_DIR:
+            _DATA_DIR + '/duke/images',
+        _ANN_FN:
+            _DATA_DIR + '/duke/test.json',
+    },
+    'cuhk03_trainval': {
+        _IM_DIR:
+            _DATA_DIR + '/cuhk03/labeled/images',
+        _ANN_FN:
+            _DATA_DIR + '/cuhk03/labeled/trainval.json',
+    },
+    'cuhk03_test': {
+        _IM_DIR:
+            _DATA_DIR + '/cuhk03/labeled/images',
+        _ANN_FN:
+            _DATA_DIR + '/cuhk03/labeled/test.json',
+    },
+    'wanda_trainval': {
+        _IM_DIR:
+            _DATA_DIR + '/wanda/images',
+        _ANN_FN:
+            _DATA_DIR + '/wanda/trainval.json',
+    },
+    'wanda_val': {
+        _IM_DIR:
+            _DATA_DIR + '/wanda/images',
+        _ANN_FN:
+            _DATA_DIR + '/wanda/val.json',
+    },
+    'wanda_test': {
+        _IM_DIR:
+            _DATA_DIR + '/wanda/images',
+        _ANN_FN:
+            _DATA_DIR + '/wanda/test.json',
+    },
+    'wanda_debug': {
+        _IM_DIR:
+            _DATA_DIR + '/wanda/images',
+        _ANN_FN:
+            _DATA_DIR + '/wanda/debug.json',
+    },
+    'ped_attr_trainval': {
+        _IM_DIR:
+            _DATA_DIR + '/ped_attr/trainval',
+        _ANN_FN:
+            _DATA_DIR + '/ped_attr/trainval.json',
+    },
+    'ped_attr_debug': {
+        _IM_DIR:
+            _DATA_DIR + '/ped_attr/trainval',
+        _ANN_FN:
+            _DATA_DIR + '/ped_attr/debug.json',
+    },
 }
 
 

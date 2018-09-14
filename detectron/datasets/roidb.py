@@ -62,13 +62,13 @@ def combined_roidb_for_training(dataset_names, proposal_files):
     roidb = roidbs[0]
     for r in roidbs[1:]:
         roidb.extend(r)
-    roidb = filter_for_training(roidb)
+    # roidb = filter_for_training(roidb)
 
-    logger.info('Computing bounding-box regression targets...')
-    add_bbox_regression_targets(roidb)
+    # logger.info('Computing bounding-box regression targets...')
+    # add_bbox_regression_targets(roidb)
     logger.info('done')
 
-    _compute_and_log_stats(roidb)
+    # _compute_and_log_stats(roidb)
 
     return roidb
 
@@ -104,6 +104,15 @@ def extend_with_flipped_entries(roidb, dataset):
                 entry['gt_keypoints'], entry['width']
             )
         flipped_entry['flipped'] = True
+
+        classes_or_attributions = flipped_entry['classes_or_attributions']
+        for i in range(classes_or_attributions.shape[0]):
+            if classes_or_attributions[i] > 0:
+                if flipped_entry['gt_attributions'][i] == 1:
+                    flipped_entry['gt_attributions'][i] == 3
+                if flipped_entry['gt_attributions'][i] == 3:
+                    flipped_entry['gt_attributions'][i] == 1
+
         flipped_roidb.append(flipped_entry)
     roidb.extend(flipped_roidb)
 

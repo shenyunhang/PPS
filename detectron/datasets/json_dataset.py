@@ -70,6 +70,12 @@ class JsonDataset(object):
         self.category_to_id_map = dict(zip(categories, category_ids))
         self.classes = ['__background__'] + categories
         self.num_classes = len(self.classes)
+
+        if 'train' in name and not cfg.REID.PSE_ON:
+            # assert self.num_classes == cfg.MODEL.NUM_CLASSES, self.num_classes
+            if self.num_classes != cfg.MODEL.NUM_CLASSES:
+                print('Warning: self.num_classes({}) != cfg.MODEL.NUM_CLASSES({})'.format(self.num_classes, cfg.MODEL.NUM_CLASSES))
+
         self.json_category_id_to_contiguous_id = {
             v: i + 1
             for i, v in enumerate(self.COCO.getCatIds())
@@ -103,9 +109,13 @@ class JsonDataset(object):
         for entry in roidb:
             self._prep_roidb_entry(entry)
         if gt:
+            logger.info('Loading ground-truth')
+            logger.info('It may take a while....')
             # Include ground-truth object annotations
             self.debug_timer.tic()
-            for entry in roidb:
+            for i, entry in enumerate(roidb):
+                if i % 100000 == 0:
+                    logger.info(' {:d}/{:d}'.format(i + 1, len(roidb)))
                 self._add_gt_annotations(entry)
             logger.debug(
                 '_add_gt_annotations took {:.3f}s'.
@@ -135,10 +145,16 @@ class JsonDataset(object):
         )
         assert os.path.exists(im_path), 'Image \'{}\' not found'.format(im_path)
         entry['image'] = im_path
+
+        entry['mark'] = None
+        entry['gt_attributions'] = np.empty((0), dtype=np.int32)
+        entry['classes_or_attributions'] = np.empty((0), dtype=np.int32)
+
         entry['flipped'] = False
         entry['has_visible_keypoints'] = False
         # Empty placeholders
         entry['boxes'] = np.empty((0, 4), dtype=np.float32)
+        entry['obn_scores'] = np.empty((0, 1), dtype=np.float32)
         entry['segms'] = []
         entry['gt_classes'] = np.empty((0), dtype=np.int32)
         entry['seg_areas'] = np.empty((0), dtype=np.float32)
@@ -167,6 +183,11 @@ class JsonDataset(object):
         valid_segms = []
         width = entry['width']
         height = entry['height']
+        
+        assert len(objs) == 1
+        if objs[0].has_key('mark'):
+            entry['mark'] = objs[0]['mark']
+
         for obj in objs:
             # crowd regions are RLE encoded
             if segm_utils.is_poly(obj['segmentation']):
@@ -191,7 +212,10 @@ class JsonDataset(object):
         num_valid_objs = len(valid_objs)
 
         boxes = np.zeros((num_valid_objs, 4), dtype=entry['boxes'].dtype)
+        obn_scores = np.zeros((num_valid_objs, 1), dtype=entry['obn_scores'].dtype)
         gt_classes = np.zeros((num_valid_objs), dtype=entry['gt_classes'].dtype)
+        gt_attributions = np.zeros((num_valid_objs), dtype=entry['gt_attributions'].dtype)
+        classes_or_attributions = np.zeros((num_valid_objs), dtype=entry['classes_or_attributions'].dtype)
         gt_overlaps = np.zeros(
             (num_valid_objs, self.num_classes),
             dtype=entry['gt_overlaps'].dtype
@@ -209,9 +233,25 @@ class JsonDataset(object):
 
         im_has_visible_keypoints = False
         for ix, obj in enumerate(valid_objs):
-            cls = self.json_category_id_to_contiguous_id[obj['category_id']]
+            if obj.has_key('category_or_attributions'):
+                cls_or_attr = obj['category_or_attributions']
+            else:
+                cls_or_attr = 0
+
+            if cls_or_attr == 0:
+                cls = self.json_category_id_to_contiguous_id[obj['category_id']]
+                attr = 0
+            elif cls_or_attr == 1:
+                cls = 0
+                attr = obj['attribution_id']
+            else:
+                cls = self.json_category_id_to_contiguous_id[obj['category_id']]
+                attr = obj['attribution_id']
+
             boxes[ix, :] = obj['clean_bbox']
             gt_classes[ix] = cls
+            gt_attributions[ix] = attr
+            classes_or_attributions[ix] = cls_or_attr
             seg_areas[ix] = obj['area']
             is_crowd[ix] = obj['iscrowd']
             box_to_gt_ind_map[ix] = ix
@@ -226,11 +266,14 @@ class JsonDataset(object):
             else:
                 gt_overlaps[ix, cls] = 1.0
         entry['boxes'] = np.append(entry['boxes'], boxes, axis=0)
+        entry['obn_scores'] = np.append(entry['obn_scores'], obn_scores, axis=0)
         entry['segms'].extend(valid_segms)
         # To match the original implementation:
         # entry['boxes'] = np.append(
         #     entry['boxes'], boxes.astype(np.int).astype(np.float), axis=0)
         entry['gt_classes'] = np.append(entry['gt_classes'], gt_classes)
+        entry['gt_attributions'] = np.append(entry['gt_attributions'], gt_attributions)
+        entry['classes_or_attributions'] = np.append(entry['classes_or_attributions'], classes_or_attributions)
         entry['seg_areas'] = np.append(entry['seg_areas'], seg_areas)
         entry['gt_overlaps'] = np.append(
             entry['gt_overlaps'].toarray(), gt_overlaps, axis=0
@@ -258,24 +301,73 @@ class JsonDataset(object):
         _remove_proposals_not_in_roidb(proposals, roidb, id_field)
         _sort_proposals(proposals, id_field)
         box_list = []
+        score_list = []
+        total_roi = 0
+        up_1024 = 0
+        up_2048 = 0
+        up_3072 = 0
+        up_4096 = 0
         for i, entry in enumerate(roidb):
             if i % 2500 == 0:
                 logger.info(' {:d}/{:d}'.format(i + 1, len(roidb)))
             boxes = proposals['boxes'][i]
+            scores = proposals['scores'][i]
             # Sanity check that these boxes are for the correct image id
             assert entry['id'] == proposals[id_field][i]
             # Remove duplicate boxes and very small boxes and then take top k
-            boxes = box_utils.clip_boxes_to_image(
-                boxes, entry['height'], entry['width']
-            )
+            # boxes = box_utils.clip_boxes_to_image(
+                # boxes, entry['height'], entry['width']
+            # )
+            assert (boxes[:, 0] >= 0).all()
+            assert (boxes[:, 1] >= 0).all()
+            assert (boxes[:, 2] >= boxes[:, 0]).all()
+            assert (boxes[:, 3] >= boxes[:, 1]).all()
+            assert (boxes[:, 2] < entry['width']).all()
+            assert (boxes[:, 3] < entry['height']).all()
+
             keep = box_utils.unique_boxes(boxes)
             boxes = boxes[keep, :]
+            scores = scores[keep]
             keep = box_utils.filter_small_boxes(boxes, min_proposal_size)
             boxes = boxes[keep, :]
+            scores = scores[keep]
+
+             # sort by confidence
+            sorted_ind = np.argsort(-scores.flatten())
+            boxes = boxes[sorted_ind, :]
+            scores = scores[sorted_ind, :]
+
             if top_k > 0:
                 boxes = boxes[:top_k, :]
+                scores = scores[:top_k]
+
+                if top_k > boxes.shape[0]:
+                    new_boxes = np.array([0, 0, 1000, 1000], dtype=boxes.dtype)
+                    new_boxes = np.tile(new_boxes, [top_k - boxes.shape[0], 1])
+                    new_score = np.zeros((top_k - boxes.shape[0], 1), dtype=scores.dtype)
+                    boxes = np.vstack((boxes, new_boxes))
+                    scores = np.vstack((scores, new_score))
+
+            total_roi += boxes.shape[0]
+            if boxes.shape[0] > 1024:
+                up_1024 += 1
+            if boxes.shape[0] > 2048:
+                up_2048 += 1
+            if boxes.shape[0] > 3072:
+                up_3072 += 1
+            if boxes.shape[0] > 4096:
+                up_4096 += 1
+
             box_list.append(boxes)
-        _merge_proposal_boxes_into_roidb(roidb, box_list)
+            score_list.append(scores)
+
+        print('total_roi: ', total_roi, ' ave roi: ', total_roi / len(box_list))
+        print('up_1024: ', up_1024)
+        print('up_2048: ', up_2048)
+        print('up_3072: ', up_3072)
+        print('up_4096: ', up_4096)
+
+        _merge_proposal_boxes_into_roidb(roidb, box_list, score_list)
         if crowd_thresh > 0:
             _filter_crowd_proposals(roidb, crowd_thresh)
 
@@ -344,11 +436,12 @@ def add_proposals(roidb, rois, scales, crowd_thresh):
     _add_class_assignments(roidb)
 
 
-def _merge_proposal_boxes_into_roidb(roidb, box_list):
+def _merge_proposal_boxes_into_roidb(roidb, box_list, score_list):
     """Add proposal boxes to each roidb entry."""
     assert len(box_list) == len(roidb)
     for i, entry in enumerate(roidb):
         boxes = box_list[i]
+        scores = score_list[i]
         num_boxes = boxes.shape[0]
         gt_overlaps = np.zeros(
             (num_boxes, entry['gt_overlaps'].shape[1]),
@@ -382,6 +475,11 @@ def _merge_proposal_boxes_into_roidb(roidb, box_list):
         entry['boxes'] = np.append(
             entry['boxes'],
             boxes.astype(entry['boxes'].dtype, copy=False),
+            axis=0
+        )
+        entry['obn_scores'] = np.append(
+            entry['obn_scores'],
+            scores.astype(entry['obn_scores'].dtype, copy=False),
             axis=0
         )
         entry['gt_classes'] = np.append(

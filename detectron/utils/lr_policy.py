@@ -25,17 +25,17 @@ import numpy as np
 from detectron.core.config import cfg
 
 
-def get_lr_at_iter(it):
+def get_lr_at_iter(it, ep, ep_size):
     """Get the learning rate at iteration it according to the cfg.SOLVER
     settings.
     """
-    lr = get_lr_func()(it)
-    if it < cfg.SOLVER.WARM_UP_ITERS:
+    lr = get_lr_func()(ep)
+    if ep < cfg.SOLVER.WARM_UP_ITERS:
         method = cfg.SOLVER.WARM_UP_METHOD
         if method == 'constant':
             warmup_factor = cfg.SOLVER.WARM_UP_FACTOR
         elif method == 'linear':
-            alpha = it / cfg.SOLVER.WARM_UP_ITERS
+            alpha = it / (cfg.SOLVER.WARM_UP_ITERS * ep_size)
             warmup_factor = cfg.SOLVER.WARM_UP_FACTOR * (1 - alpha) + alpha
         else:
             raise KeyError('Unknown SOLVER.WARM_UP_METHOD: {}'.format(method))

@@ -42,6 +42,7 @@ import detectron.utils.train
 
 c2_utils.import_contrib_ops()
 c2_utils.import_detectron_ops()
+c2_utils.import_custom_ops()
 
 # OpenCL may be enabled by default in OpenCV3; disable it because it's not
 # thread safe and causes unwanted GPU memory allocations.
@@ -115,6 +116,16 @@ def main():
     # Test the trained model
     if not args.skip_test:
         test_model(checkpoints['final'], args.multi_gpu_testing, args.opts)
+        print('reprint snapshot name for the result: ', checkpoints['final'])
+
+        cfg.immutable(False)
+        cfg.TEST.BBOX_AUG.ENABLED = False
+        cfg.REID.VIS = False
+        cfg.immutable(True)
+
+        for snapshot in sorted(checkpoints.iterkeys(), reverse=True):
+            test_model(checkpoints[snapshot], args.multi_gpu_testing, args.opts)
+            print('reprint snapshot name for the result: ', snapshot, checkpoints[snapshot])
 
 
 def test_model(model_file, multi_gpu_testing, opts=None):

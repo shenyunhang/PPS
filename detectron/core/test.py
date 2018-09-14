@@ -49,7 +49,7 @@ import detectron.utils.keypoints as keypoint_utils
 logger = logging.getLogger(__name__)
 
 
-def im_detect_all(model, im, box_proposals, timers=None):
+def im_detect_all(model, im, box_proposals, obn_scores, timers=None):
     if timers is None:
         timers = defaultdict(Timer)
 
@@ -62,9 +62,13 @@ def im_detect_all(model, im, box_proposals, timers=None):
     if cfg.TEST.BBOX_AUG.ENABLED:
         scores, boxes, im_scale = im_detect_bbox_aug(model, im, box_proposals)
     else:
-        scores, boxes, im_scale = im_detect_bbox(
-            model, im, cfg.TEST.SCALE, cfg.TEST.MAX_SIZE, boxes=box_proposals
+        feat_concat = im_detect_bbox(
+            model, im, cfg.TEST.SCALE, cfg.TEST.MAX_SIZE, boxes=box_proposals, obn_scores=obn_scores
         )
+
+        # scores, boxes, im_scale = im_detect_bbox(
+            # model, im, cfg.TEST.SCALE, cfg.TEST.MAX_SIZE, boxes=box_proposals
+        # )
     timers['im_detect_bbox'].toc()
 
     # score and boxes are from the whole image after score thresholding and nms
@@ -72,8 +76,10 @@ def im_detect_all(model, im, box_proposals, timers=None):
     # cls_boxes boxes and scores are separated by class and in the format used
     # for evaluating results
     timers['misc_bbox'].tic()
-    scores, boxes, cls_boxes = box_results_with_nms_and_limit(scores, boxes)
+    # scores, boxes, cls_boxes = box_results_with_nms_and_limit(scores, boxes)
     timers['misc_bbox'].toc()
+
+    return feat_concat
 
     if cfg.MODEL.MASK_ON and boxes.shape[0] > 0:
         timers['im_detect_mask'].tic()
@@ -118,7 +124,7 @@ def im_conv_body_only(model, im, target_scale, target_max_size):
     return im_scale
 
 
-def im_detect_bbox(model, im, target_scale, target_max_size, boxes=None):
+def im_detect_bbox(model, im, target_scale, target_max_size, boxes=None, obn_scores=None):
     """Bounding box object detection for an image with given box proposals.
 
     Arguments:
@@ -134,23 +140,24 @@ def im_detect_bbox(model, im, target_scale, target_max_size, boxes=None):
         im_scales (list): list of image scales used in the input blob (as
             returned by _get_blobs and for use with im_detect_mask, etc.)
     """
-    inputs, im_scale = _get_blobs(im, boxes, target_scale, target_max_size)
+    inputs, im_scale = _get_blobs(im, boxes, obn_scores, target_scale, target_max_size)
 
     # When mapping from image ROIs to feature map ROIs, there's some aliasing
     # (some distinct image ROIs get mapped to the same feature ROI).
     # Here, we identify duplicate feature ROIs, so we only compute features
     # on the unique subset.
-    if cfg.DEDUP_BOXES > 0 and not cfg.MODEL.FASTER_RCNN:
+    if cfg.DEDUP_BOXES > 0 and not cfg.MODEL.FASTER_RCNN and False:
         v = np.array([1, 1e3, 1e6, 1e9, 1e12])
         hashes = np.round(inputs['rois'] * cfg.DEDUP_BOXES).dot(v)
         _, index, inv_index = np.unique(
             hashes, return_index=True, return_inverse=True
         )
         inputs['rois'] = inputs['rois'][index, :]
+        inputs['obn_scores'] = inputs['obn_scores'][index, :]
         boxes = boxes[index, :]
 
     # Add multi-level rois for FPN
-    if cfg.FPN.MULTILEVEL_ROIS and not cfg.MODEL.FASTER_RCNN:
+    if cfg.FPN.MULTILEVEL_ROIS and not cfg.MODEL.FASTER_RCNN and False:
         _add_multilevel_rois_for_test(inputs, 'rois')
 
     for k, v in inputs.items():
@@ -163,10 +170,26 @@ def im_detect_bbox(model, im, target_scale, target_max_size, boxes=None):
         # unscale back to raw image space
         boxes = rois[:, 1:5] / im_scale
 
+    prefix = 'reid'
+
+    # rois_conf = workspace.FetchBlob(core.ScopedName(prefix + '_rois_conf')).squeeze()
+    # print(rois_conf)
+    # print(rois_conf.sum())
+    # print(rois_conf.mean())
+    # print(rois_conf.max())
+    # print(rois_conf.min())
+
+    if cfg.REID.NORMALIZE_FEATURE:
+        feat_concat = workspace.FetchBlob(core.ScopedName(prefix + '_feature_concat_norm')).squeeze()
+    else:
+        feat_concat = workspace.FetchBlob(core.ScopedName(prefix + '_feature_concat')).squeeze()
+
+    return feat_concat
+
     # Softmax class probabilities
-    scores = workspace.FetchBlob(core.ScopedName('cls_prob')).squeeze()
+    # scores = workspace.FetchBlob(core.ScopedName('cls_prob')).squeeze()
     # In case there is 1 proposal
-    scores = scores.reshape([-1, scores.shape[-1]])
+    # scores = scores.reshape([-1, scores.shape[-1]])
 
     if cfg.TEST.BBOX_REG:
         # Apply bounding-box regression deltas
@@ -913,7 +936,13 @@ def _project_im_rois(im_rois, scales):
         rois (ndarray): R x 4 matrix of projected RoI coordinates
         levels (ndarray): image pyramid levels used by each projected RoI
     """
-    rois = im_rois.astype(np.float, copy=False) * scales
+    # rois = im_rois.astype(np.float, copy=False) * scales
+    rois = im_rois.astype(np.float, copy=False)
+    rois[:, 0] = rois[:, 0] * scales[0]
+    rois[:, 1] = rois[:, 1] * scales[1]
+    rois[:, 2] = rois[:, 2] * scales[0]
+    rois[:, 3] = rois[:, 3] * scales[1]
+
     levels = np.zeros((im_rois.shape[0], 1), dtype=np.int)
     return rois, levels
 
@@ -939,11 +968,12 @@ def _add_multilevel_rois_for_test(blobs, name):
     )
 
 
-def _get_blobs(im, rois, target_scale, target_max_size):
+def _get_blobs(im, rois, obn_scores, target_scale, target_max_size):
     """Convert an image and RoIs within that image into network inputs."""
     blobs = {}
     blobs['data'], im_scale, blobs['im_info'] = \
         blob_utils.get_image_blob(im, target_scale, target_max_size)
     if rois is not None:
         blobs['rois'] = _get_rois_blob(rois, im_scale)
+        blobs['obn_scores'] = np.add(obn_scores, 1.0)
     return blobs, im_scale

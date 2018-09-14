@@ -143,17 +143,33 @@ def remove_spatial_bn_layers(caffenet, caffenet_weights):
         bn_var = np.asarray(bn.blobs[1].data)
         scale = np.asarray(scl.blobs[0].data)
         bias = np.asarray(scl.blobs[1].data)
-        std = np.sqrt(bn_var + 1e-5)
-        new_scale = scale / std
-        new_bias = bias - bn_mean * scale / std
-        new_scale_tensor = _create_tensor(
-            new_scale, bn.blobs[0].shape, blob_out + '_s'
+
+        bn_mean_tensor = _create_tensor(
+            bn_mean, bn.blobs[0].shape, blob_out + '_rm'
         )
-        new_bias_tensor = _create_tensor(
-            new_bias, bn.blobs[0].shape, blob_out + '_b'
+        bn_var_tensor = _create_tensor(
+            bn_var, bn.blobs[1].shape, blob_out + '_riv'
         )
-        bn_tensors.extend([new_scale_tensor, new_bias_tensor])
+        scale_tensor = _create_tensor(
+            scale, scl.blobs[0].shape, blob_out + '_s'
+        )
+        bias_tensor = _create_tensor(
+            bias, scl.blobs[1].shape, blob_out + '_b'
+        )
+        bn_tensors.extend([bn_mean_tensor, bn_var_tensor, scale_tensor, bias_tensor])
     return bn_tensors
+
+        # std = np.sqrt(bn_var + 1e-5)
+        # new_scale = scale / std
+        # new_bias = bias - bn_mean * scale / std
+        # new_scale_tensor = _create_tensor(
+            # new_scale, bn.blobs[0].shape, blob_out + '_s'
+        # )
+        # new_bias_tensor = _create_tensor(
+            # new_bias, bn.blobs[0].shape, blob_out + '_b'
+        # )
+        # bn_tensors.extend([new_scale_tensor, new_bias_tensor])
+    # return bn_tensors
 
 
 def remove_layers_without_parameters(caffenet, caffenet_weights):

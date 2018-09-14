@@ -1,0 +1,56 @@
+MODEL:
+  TYPE: generalized_reid
+  CONV_BODY: ResNet.add_ResNet50_conv5_body
+  NUM_CLASSES: 752
+  USE_BN: True
+NUM_GPUS: 1
+SOLVER:
+  WEIGHT_DECAY: 0.0005
+  LR_POLICY: steps_with_decay
+  BASE_LR: 0.01
+  # Equivalent schedules with...
+  # 1 GPU:
+  #   BASE_LR: 0.01
+  # 2 GPUs:
+  #   BASE_LR: 0.02
+  # 4 GPUs:
+  #   BASE_LR: 0.04
+  # 8 GPUs:
+  #   BASE_LR: 0.08
+  LR_SCALE_NEW_PARAM: 10.0
+  LR_SCALE_NEW_FC: 10.0
+  GAMMA: 0.1
+  MAX_ITER: 61
+  STEPS: [0, 20, 40]
+  WARM_UP_ITERS: 0
+  WARM_UP_FACTOR: 0.01
+FAST_RCNN:
+  ROI_BOX_HEAD: bpm_heads.add_uniform_part_head
+TRAIN:
+  #WEIGHTS: https://s3-us-west-2.amazonaws.com/detectron/ImageNetPretrained/MSRA/R-50.pkl
+  WEIGHTS: ../../Dataset/model/R-50_BN.pkl
+  DATASETS: ('market1501_trainval',)
+  SCALES: (800,)
+  MAX_SIZE: 1333
+  IMS_PER_BATCH: 64
+  SNAPSHOT_ITERS: 5
+  FREEZE_AT: 0
+TEST:
+  DATASETS: ('market1501_test',)
+  PRECOMPUTED_PROPOSALS: False
+  SCALE: 800
+  MAX_SIZE: 1333
+OUTPUT_DIR: .
+RESNETS:
+  RES5_DILATION: 1
+  RES5_STRIDE: 1
+  #STRIDE_1X1: False  # default True for MSRA; False for C2 or Torch models
+RNG_SEED: 11
+REID:
+  VIS: False
+  RERANK: False
+  SCALE: (128, 384)
+  BPM_STRIP_NUM: 6
+  BPM_DIM: 256
+  ITER_SIZE: 1
+  NORMALIZE_FEATURE: True

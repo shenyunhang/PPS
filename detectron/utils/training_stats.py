@@ -39,9 +39,9 @@ class TrainingStats(object):
 
     def __init__(self, model):
         # Window size for smoothing tracked values (with median filtering)
-        self.WIN_SZ = 20
+        self.WIN_SZ = int(20 / cfg.NUM_GPUS)
         # Output logging period in SGD iterations
-        self.LOG_PERIOD = 20
+        self.LOG_PERIOD = int(20 /cfg.NUM_GPUS)
         self.smoothed_losses_and_metrics = {
             key: SmoothedValue(self.WIN_SZ)
             for key in model.losses + model.metrics
@@ -84,14 +84,16 @@ class TrainingStats(object):
 
     def LogIterStats(self, cur_iter, lr):
         """Log the tracked statistics."""
+        num_iter_per_epoch = self.model.roi_data_loader.get_num_iter_per_epoch()
         if (cur_iter % self.LOG_PERIOD == 0 or
-                cur_iter == cfg.SOLVER.MAX_ITER - 1):
+                cur_iter == cfg.SOLVER.MAX_ITER * num_iter_per_epoch - 1):
             stats = self.GetStats(cur_iter, lr)
             log_json_stats(stats)
 
     def GetStats(self, cur_iter, lr):
+        num_iter_per_epoch = self.model.roi_data_loader.get_num_iter_per_epoch()
         eta_seconds = self.iter_timer.average_time * (
-            cfg.SOLVER.MAX_ITER - cur_iter
+            cfg.SOLVER.MAX_ITER * num_iter_per_epoch - cur_iter
         )
         eta = str(datetime.timedelta(seconds=int(eta_seconds)))
         mem_stats = c2_py_utils.GetGPUMemoryUsageStats()
@@ -100,13 +102,13 @@ class TrainingStats(object):
             iter=cur_iter,
             lr=float(lr),
             time=self.iter_timer.average_time,
-            loss=self.smoothed_total_loss.GetMedianValue(),
+            loss=self.smoothed_total_loss.GetAverageValue(),
             eta=eta,
             mb_qsize=int(
-                np.round(self.smoothed_mb_qsize.GetMedianValue())
+                np.round(self.smoothed_mb_qsize.GetAverageValue())
             ),
             mem=int(np.ceil(mem_usage / 1024 / 1024))
         )
         for k, v in self.smoothed_losses_and_metrics.items():
-            stats[k] = v.GetMedianValue()
+            stats[k] = v.GetAverageValue()
         return stats

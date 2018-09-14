@@ -46,8 +46,18 @@ import detectron.datasets.cityscapes_json_dataset_evaluator \
     as cs_json_dataset_evaluator
 import detectron.datasets.json_dataset_evaluator as json_dataset_evaluator
 import detectron.datasets.voc_dataset_evaluator as voc_dataset_evaluator
+import detectron.datasets.reid_dataset_evaluator as reid_dataset_evaluator
 
 logger = logging.getLogger(__name__)
+
+
+def evaluate_reid(dataset, all_feats, output_dir):
+    coco_eval = reid_dataset_evaluator.evaluate(dataset, all_feats, output_dir)
+    reid_results = _coco_eval_to_reid_results(coco_eval)
+    all_results = OrderedDict([(dataset.name, reid_results)])
+    logger.info('Evaluating ReID is done!')
+
+    return all_results
 
 
 def evaluate_all(
@@ -332,6 +342,23 @@ def _coco_eval_to_keypoint_results(coco_eval):
     return res
 
 
+def _coco_eval_to_reid_results(coco_eval):
+    res = _empty_reid_results()
+    if coco_eval is not None:
+        s = coco_eval
+        res['ReID']['mAP'] = s[0]
+        res['ReID']['CMC1'] = s[1][0]
+        res['ReID']['CMC5'] = s[1][4]
+        res['ReID']['CMC10'] = s[1][9]
+        if s[2] is not None:
+            res['ReID']['mq_mAP'] = s[2]
+        if s[3] is not None:
+            res['ReID']['mq_CMC1'] = s[3][0]
+            res['ReID']['mq_CMC5'] = s[3][4]
+            res['ReID']['mq_CMC10'] = s[3][9]
+    return res
+
+
 def _voc_eval_to_box_results(voc_eval):
     # Not supported (return empty results)
     return _empty_box_results()
@@ -402,6 +429,24 @@ def _empty_box_proposal_results():
                 ('ARs@1000', -1),
                 ('ARm@1000', -1),
                 ('ARl@1000', -1),
+            ]
+        )
+    })
+
+
+def _empty_reid_results():
+    return OrderedDict({
+        'ReID':
+        OrderedDict(
+            [
+                ('mAP', -1),
+                ('CMC1', -1),
+                ('CMC5', -1),
+                ('CMC10', -1),
+                ('mq_mAP', -1),
+                ('mq_CMC1', -1),
+                ('mq_CMC5', -1),
+                ('mq_CMC10', -1),
             ]
         )
     })
