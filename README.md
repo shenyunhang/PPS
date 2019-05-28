@@ -1,6 +1,6 @@
 # A Part Power Set Model for Scale-Free Person Retrieval
 
-By [Yunhang Shen](), [Rongrong Ji](), [Xiaopeng Hong](), [Feng Zheng](), [Xiaowei Guo](), [Yongjian Wu](), [Feiyue Huang]().
+By [Yunhang Shen](), [Rongrong Ji](http://mac.xmu.edu.cn/rrji-en.html), [Xiaopeng Hong](https://hongxiaopeng.com/), [Feng Zheng](https://scholar.google.com/citations?user=PcmyXHMAAAAJ), [Xiaowei Guo](), [Yongjian Wu](), [Feiyue Huang]().
 
 IJCAI 2019 Paper
 
@@ -17,7 +17,7 @@ To enable scale-free input, we further exploit the pyramid architecture of deep 
 
 ## License
 
-PPS is released under the [Apache 2.0 license](https://github.com/facebookresearch/detectron/blob/master/LICENSE). See the [NOTICE](https://github.com/facebookresearch/detectron/blob/master/NOTICE) file for additional details.
+PPS is released under the [Apache 2.0 license](https://github.com/shenyunhang/PPS/blob/PPS/LICENSE). See the [NOTICE](https://github.com/shenyunhang/PPS/blob/PPS/NOTICE) file for additional details.
 
 
 ## Citing Detectron
