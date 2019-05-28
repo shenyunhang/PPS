@@ -20,7 +20,7 @@ To enable scale-free input, we further exploit the pyramid architecture of deep 
 PPS is released under the [Apache 2.0 license](https://github.com/shenyunhang/PPS/blob/PPS/LICENSE). See the [NOTICE](https://github.com/shenyunhang/PPS/blob/PPS/NOTICE) file for additional details.
 
 
-## Citing Detectron
+## Citing PPS
 
 If you find PPS useful in your research, please consider citing:
 
