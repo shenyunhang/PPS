@@ -10,3 +10,4 @@ six
 future
 protobuf
 sklearn
+pycococreatortools
