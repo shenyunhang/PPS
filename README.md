@@ -85,6 +85,13 @@ python setup.py install --user
 
 Note that instructions like `# COCOAPI=/path/to/install/cocoapi` indicate that you should pick a path where you'd like to have the software cloned and then set an environment variable (`COCOAPI` in this case) accordingly.
 
+Install the [pycococreator](https://github.com/waspinator/pycococreator):
+
+```
+pip install git+git://github.com/waspinator/pycococreator.git@0.2.0
+```
+
+
 ### PPS
 
 Clone the PPS repository:
