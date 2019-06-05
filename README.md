@@ -99,24 +99,25 @@ Clone the PPS repository:
 ```
 # PPS=/path/to/clone/PPS
 git clone https://github.com/shenyunhang/PPS.git $PPS
+cd $PPS
 ```
 
 Install Python dependencies:
 
 ```
-pip install -r $PPS/requirements.txt
+pip install -r requirements.txt
 ```
 
 Set up Python modules:
 
 ```
-cd $PPS && make
+make
 ```
 
 Build the custom operators library:
 
 ```
-cd $PPS && mkdir -p build && cd build
+mkdir -p build && cd build
 cmake .. -DCMAKE_CXX_FLAGS="-isystem $pytorch/third_party/eigen -isystem $/pytorch/third_party/cub"
 make
 ```
@@ -164,6 +165,7 @@ cuhk03
 
 Generate the COCO Json files, which is used in Detectron:
 ```
+cd $PPS
 python tools/bpm_to_coco.py
 ```
 You may need to modify the paths of datasets in tools/bpm_to_coco.py if you put datasets in different locations.
@@ -177,6 +179,20 @@ ln -s ~/Dataset/market1501 market1501
 ln -s ~/Dataset/duke duke
 ln -s ~/Dataset/cuhk03 cuhk03
 ```
+
+
+### Model Preparation
+
+Download ResNet50 model (ResNet-50-model.caffemodel and ResNet-50-deploy.prototxt) from this [link](https://github.com/KaimingHe/deep-residual-networks)
+```
+cd $PPS
+mkdir -p ~/Dataset/model
+python tools/pickle_caffe_blobs_keep_bn.py --prototxt /path/to/ResNet-50-deploy.prototxt --caffemodel /path/to/ResNet-50-model.caffemodel --output ~/Dataset/model/R-50_BN.pkl
+```
+
+Noted that this requires to instal caffe1 separately, as caffe1 specific proto is removed in pytorch v1.0.1. 
+See [this](https://github.com/pytorch/pytorch/commit/40109b16d0df8248bc01ad08c7ab615310c52d67).
+
 
 
 ## Quick Start: Using PPS
