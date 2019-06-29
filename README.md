@@ -27,7 +27,7 @@ If you find PPS useful in your research, please consider citing:
 ```
 @inproceedings{shen2019pps,
     author = {Yunhang Shen and Rongrong Ji and Xiaopeng Hong and Feng Zheng and Xiaowei Guo and Yongjian Wu and Feiyue Huang},
-    title = {{A Part Power Set Model for Person Retrieval with Multi-Scale Features}},
+    title = {{A Part Power Set Model for Scale-Free Person Retrieval}},
     booktitle = {IJCAI},
     year = {2019},
 }   
