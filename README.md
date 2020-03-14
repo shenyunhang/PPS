@@ -193,7 +193,7 @@ python tools/pickle_caffe_blobs_keep_bn.py --prototxt /path/to/ResNet-50-deploy.
 Noted that this requires to instal caffe1 separately, as caffe1 specific proto is removed in pytorch v1.0.1. 
 See [this](https://github.com/pytorch/pytorch/commit/40109b16d0df8248bc01ad08c7ab615310c52d67).
 
-You can download what I have transformed for the project from this [link](https://1drv.ms/u/s!AodeRhn8mpxoh0TIj0K7eaUWyREj?e=VuGeGe).
+You can download what I have transformed for the project from this [link](https://1drv.ms/u/s!Am1oWgo9554df5c4ENKNqdEpT3A?e=S40kHr).
 
 You may also need to modify the below config files to point TRAINING.WEIGHTS to R-50_BN.pkl.
 
