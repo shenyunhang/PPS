@@ -25,9 +25,9 @@ PPS is released under the [Apache 2.0 license](https://github.com/shenyunhang/PP
 If you find PPS useful in your research, please consider citing:
 
 ```
-@inproceedings{Shen_2019_IJCAI,
-    author = {Yunhang Shen and Rongrong Ji and Xiaopeng Hong and Feng Zheng and Xiaowei Guo and Yongjian Wu and Feiyue Huang},
-    title = {{A Part Power Set Model for Scale-Free Person Retrieval}},
+@inproceedings{PPS_2019_IJCAI,
+    author = {Shen, Yunhang and Ji, Rongrong and Hong, Xiaopeng and Zheng, Feng and Guo, Xiaowei and Wu, Yongjian and Huang, Feiyue},
+    title = {A Part Power Set Model for Scale-Free Person Retrieval},
     booktitle = {International Joint Conference on Artificial Intelligence (IJCAI)},
     year = {2019},
 }   
